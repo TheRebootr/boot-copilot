@@ -173,7 +173,7 @@ class ClaudeSession {
     userId: number,
     statusCallback: StatusCallback,
     chatId?: number,
-    ctx?: Context
+    ctx?: Context,
   ): Promise<string> {
     // Set chat context for ask_user MCP tool
     if (chatId) {
@@ -200,14 +200,14 @@ class ClaudeSession {
           hour: "2-digit",
           minute: "2-digit",
           timeZoneName: "short",
-        }
+        },
       )}]\n\n`;
       messageToSend = datePrefix + message;
     }
 
     // Build SDK V1 options - supports all features
     const options: Options = {
-      model: "claude-sonnet-4-5",
+      model: "claude-sonnet-4-6",
       cwd: WORKING_DIR,
       settingSources: ["user", "project"],
       permissionMode: "bypassPermissions",
@@ -228,8 +228,8 @@ class ClaudeSession {
       console.log(
         `RESUMING session ${this.sessionId.slice(
           0,
-          8
-        )}... (thinking=${thinkingLabel})`
+          8,
+        )}... (thinking=${thinkingLabel})`,
       );
     } else {
       console.log(`STARTING new Claude session (thinking=${thinkingLabel})`);
@@ -239,7 +239,7 @@ class ClaudeSession {
     // Check if stop was requested during processing phase
     if (this.stopRequested) {
       console.log(
-        "Query cancelled before starting (stop was requested during processing)"
+        "Query cancelled before starting (stop was requested during processing)",
       );
       this.stopRequested = false;
       throw new Error("Query cancelled");
@@ -325,7 +325,7 @@ class ClaudeSession {
 
                   if (!isTmpRead && !isPathAllowed(filePath)) {
                     console.warn(
-                      `BLOCKED: File access outside allowed paths: ${filePath}`
+                      `BLOCKED: File access outside allowed paths: ${filePath}`,
                     );
                     await statusCallback("tool", `Access denied: ${filePath}`);
                     throw new Error(`File access blocked: ${filePath}`);
@@ -338,7 +338,7 @@ class ClaudeSession {
                 await statusCallback(
                   "segment_end",
                   currentSegmentText,
-                  currentSegmentId
+                  currentSegmentId,
                 );
                 currentSegmentId++;
                 currentSegmentText = "";
@@ -364,7 +364,7 @@ class ClaudeSession {
                 for (let attempt = 0; attempt < 3; attempt++) {
                   const buttonsSent = await checkPendingAskUserRequests(
                     ctx,
-                    chatId
+                    chatId,
                   );
                   if (buttonsSent) {
                     askUserTriggered = true;
@@ -391,7 +391,7 @@ class ClaudeSession {
                 await statusCallback(
                   "text",
                   currentSegmentText,
-                  currentSegmentId
+                  currentSegmentId,
                 );
                 lastTextUpdate = now;
               }
@@ -416,7 +416,7 @@ class ClaudeSession {
             console.log(
               `Usage: in=${u.input_tokens} out=${u.output_tokens} cache_read=${
                 u.cache_read_input_tokens || 0
-              } cache_create=${u.cache_creation_input_tokens || 0}`
+              } cache_create=${u.cache_creation_input_tokens || 0}`,
             );
           }
         }
@@ -497,7 +497,7 @@ class ClaudeSession {
 
       // Remove any existing entry with same session_id (update in place)
       const existingIndex = history.sessions.findIndex(
-        (s) => s.session_id === this.sessionId
+        (s) => s.session_id === this.sessionId,
       );
       if (existingIndex !== -1) {
         history.sessions[existingIndex] = newSession;
@@ -541,7 +541,7 @@ class ClaudeSession {
     const history = this.loadSessionHistory();
     // Filter to only sessions for current working directory
     return history.sessions.filter(
-      (s) => !s.working_dir || s.working_dir === WORKING_DIR
+      (s) => !s.working_dir || s.working_dir === WORKING_DIR,
     );
   }
 
@@ -550,7 +550,9 @@ class ClaudeSession {
    */
   resumeSession(sessionId: string): [success: boolean, message: string] {
     const history = this.loadSessionHistory();
-    const sessionData = history.sessions.find((s) => s.session_id === sessionId);
+    const sessionData = history.sessions.find(
+      (s) => s.session_id === sessionId,
+    );
 
     if (!sessionData) {
       return [false, "Sessione non trovata"];
@@ -568,13 +570,10 @@ class ClaudeSession {
     this.lastActivity = new Date();
 
     console.log(
-      `Resumed session ${sessionData.session_id.slice(0, 8)}... - "${sessionData.title}"`
+      `Resumed session ${sessionData.session_id.slice(0, 8)}... - "${sessionData.title}"`,
     );
 
-    return [
-      true,
-      `Ripresa sessione: "${sessionData.title}"`,
-    ];
+    return [true, `Ripresa sessione: "${sessionData.title}"`];
   }
 
   /**

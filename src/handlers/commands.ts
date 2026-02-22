@@ -151,6 +151,25 @@ export async function handleStatus(ctx: Context): Promise<void> {
     }
   }
 
+  // Context window
+  const MODEL_CONTEXT_WINDOW = 200_000; // claude-sonnet-4-5
+  if (session.lastUsage) {
+    const u = session.lastUsage;
+    const used = u.input_tokens
+      + (u.cache_read_input_tokens || 0)
+      + (u.cache_creation_input_tokens || 0);
+    const pct  = (used / MODEL_CONTEXT_WINDOW) * 100;
+    const BAR  = 16;
+    const fill = Math.round((pct / 100) * BAR);
+    const bar  = "█".repeat(fill) + "░".repeat(BAR - fill);
+    const remaining = (MODEL_CONTEXT_WINDOW - used).toLocaleString();
+    lines.push(
+      `\n🪟 Context window:`,
+      `   ${bar}  ${pct.toFixed(1)}% used`,
+      `   ${used.toLocaleString()} / ${MODEL_CONTEXT_WINDOW.toLocaleString()} tokens (~${remaining} remaining)`
+    );
+  }
+
   // Error status
   if (session.lastError) {
     const ago = session.lastErrorTime
