@@ -190,7 +190,7 @@ export const BUTTON_LABEL_MAX_LENGTH = 30; // Max chars for inline button labels
 // ============== Audit Logging ==============
 
 export const AUDIT_LOG_PATH =
-  process.env.AUDIT_LOG_PATH || "/tmp/claude-telegram-audit.log";
+  process.env.AUDIT_LOG_PATH || "/data/logs/audit.log";
 export const AUDIT_LOG_JSON =
   (process.env.AUDIT_LOG_JSON || "false").toLowerCase() === "true";
 

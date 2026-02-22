@@ -25,7 +25,7 @@ Telegram message → Handler → Auth check → Rate limit → Claude session �
 
 - **`src/index.ts`** - Entry point, registers handlers, starts polling
 - **`src/config.ts`** - Environment parsing, MCP loading, safety prompts
-- **`src/session.ts`** - `ClaudeSession` class wrapping Agent SDK V2 with streaming, session persistence (`/tmp/claude-telegram-session.json`), and defense-in-depth safety checks
+- **`src/session.ts`** - `ClaudeSession` class wrapping Agent SDK V2 with streaming, session persistence (`/data/session.json`), and defense-in-depth safety checks
 - **`src/security.ts`** - `RateLimiter` (token bucket), path validation, command safety checks
 - **`src/formatting.ts`** - Markdown→HTML conversion for Telegram, tool status emoji formatting
 - **`src/utils.ts`** - Audit logging, voice transcription (OpenAI), typing indicators
@@ -65,9 +65,10 @@ MCP servers defined in `mcp-config.ts`.
 
 ### Runtime Files
 
-- `/tmp/claude-telegram-session.json` - Session persistence for `/resume`
-- `/tmp/telegram-bot/` - Downloaded photos/documents
-- `/tmp/claude-telegram-audit.log` - Audit log
+- `/data/session.json` - Session persistence for `/resume`
+- `/data/restart.json` - Restart state
+- `/data/logs/audit.log` - Audit log
+- `/tmp/telegram-bot/` - Downloaded photos/documents (scratch, not persistent)
 
 ## Patterns
 
