@@ -13,12 +13,9 @@ import type { McpServerConfig } from "./types";
 const HOME = homedir();
 
 // Ensure necessary paths are available for Claude's bash commands
-// LaunchAgents don't inherit the full shell environment
 const EXTRA_PATHS = [
   `${HOME}/.local/bin`,
   `${HOME}/.bun/bin`,
-  "/opt/homebrew/bin",
-  "/opt/homebrew/sbin",
   "/usr/local/bin",
 ];
 
@@ -44,6 +41,7 @@ export const ALLOWED_USERS: number[] = (
 
 export const WORKING_DIR = process.env.CLAUDE_WORKING_DIR || HOME;
 export const OPENAI_API_KEY = process.env.OPENAI_API_KEY || "";
+export const CLAUDE_MODEL = process.env.CLAUDE_MODEL || "claude-sonnet-4-6";
 
 // ============== Claude CLI Path ==============
 
@@ -87,11 +85,10 @@ export { MCP_SERVERS };
 
 // Allowed directories for file operations
 const defaultAllowedPaths = [
-  WORKING_DIR,
-  `${HOME}/Documents`,
-  `${HOME}/Downloads`,
-  `${HOME}/Desktop`,
-  `${HOME}/.claude`, // Claude Code data (plans, settings)
+  WORKING_DIR,            // /workspace/projects (set via CLAUDE_WORKING_DIR)
+  "/workspace",           // all project files
+  "/data",                // state, config, credentials
+  `${HOME}/.claude`,      // Claude Code settings
 ];
 
 const allowedPathsStr = process.env.ALLOWED_PATHS || "";
@@ -108,26 +105,19 @@ function buildSafetyPrompt(allowedPaths: string[]): string {
     .map((p) => `   - ${p} (and subdirectories)`)
     .join("\n");
 
-  return `
-CRITICAL SAFETY RULES FOR TELEGRAM BOT:
+  return `SAFETY RULES:
 
-1. NEVER delete, remove, or overwrite files without EXPLICIT confirmation from the user.
-   - If user asks to delete something, respond: "Are you sure you want to delete [file]? Reply 'yes delete it' to confirm."
-   - Only proceed with deletion if user replies with explicit confirmation like "yes delete it", "confirm delete"
-   - This applies to: rm, trash, unlink, shred, or any file deletion
+You are Boot, running inside a Docker container. The user communicates via Telegram
+and cannot easily undo mistakes.
+
+1. NEVER delete, remove, or overwrite files without explicit confirmation from the user.
+   Wait for the user to reply "yes" or "confirm" before any destructive operation.
 
 2. You can ONLY access files in these directories:
 ${pathsList}
-   - REFUSE any file operations outside these paths
+   Refuse any file operations outside these paths.
 
-3. NEVER run dangerous commands like:
-   - rm -rf (recursive force delete)
-   - Any command that affects files outside allowed directories
-   - Commands that could damage the system
-
-4. For any destructive or irreversible action, ALWAYS ask for confirmation first.
-
-You are running via Telegram, so the user cannot easily undo mistakes. Be extra careful!
+3. For any irreversible action, always ask for confirmation first.
 `;
 }
 
@@ -219,12 +209,12 @@ export const RATE_LIMIT_WINDOW = parseInt(
 
 // ============== File Paths ==============
 
-export const SESSION_FILE = "/tmp/claude-telegram-session.json";
-export const RESTART_FILE = "/tmp/claude-telegram-restart.json";
+export const SESSION_FILE = "/data/session.json";
+export const RESTART_FILE = "/data/restart.json";
 export const TEMP_DIR = "/tmp/telegram-bot";
 
 // Temp paths that are always allowed for bot operations
-export const TEMP_PATHS = ["/tmp/", "/private/tmp/", "/var/folders/"];
+export const TEMP_PATHS = ["/tmp/", "/data/"];
 
 // Ensure temp directory exists
 await Bun.write(`${TEMP_DIR}/.keep`, "");
