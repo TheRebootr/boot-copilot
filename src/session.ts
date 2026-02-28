@@ -10,7 +10,8 @@ import {
   type Options,
   type SDKMessage,
 } from "@anthropic-ai/claude-agent-sdk";
-import { readFileSync } from "fs";
+import { existsSync, readFileSync } from "fs";
+import path from "path";
 import type { Context } from "grammy";
 import {
   ALLOWED_PATHS,
@@ -206,6 +207,15 @@ class ClaudeSession {
       messageToSend = datePrefix + message;
     }
 
+    // Read persistent memory if it exists
+    const memoryPath = path.join(WORKING_DIR, "MEMORY.md");
+    const memoryContent = existsSync(memoryPath)
+      ? readFileSync(memoryPath, "utf-8").trim()
+      : "";
+    const systemPrompt = memoryContent
+      ? `${SAFETY_PROMPT}\n\n## Session Memory\n${memoryContent}`
+      : SAFETY_PROMPT;
+
     // Build SDK V1 options - supports all features
     const options: Options = {
       model: CLAUDE_MODEL,
@@ -213,7 +223,7 @@ class ClaudeSession {
       settingSources: ["user", "project"],
       permissionMode: "bypassPermissions",
       allowDangerouslySkipPermissions: true,
-      systemPrompt: SAFETY_PROMPT,
+      systemPrompt: systemPrompt,
       mcpServers: MCP_SERVERS,
       maxThinkingTokens: thinkingTokens,
       additionalDirectories: ALLOWED_PATHS,
