@@ -24,8 +24,21 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     fd-find \
     jq \
     tree \
+    ffmpeg \
     && apt-get clean && rm -rf /var/lib/apt/lists/* \
     && ln -s /usr/bin/fdfind /usr/bin/fd
+
+# uv — fast Python package manager (installs Python itself)
+COPY --from=ghcr.io/astral-sh/uv:0.7 /uv /usr/local/bin/uv
+ENV UV_PYTHON_INSTALL_DIR=/usr/local/share/uv/python
+RUN uv python install 3.12 \
+    && ln -s $(uv python find 3.12) /usr/local/bin/python3 \
+    && ln -s /usr/local/bin/python3 /usr/local/bin/python
+
+# System libs needed by opencv-python-headless at runtime
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libglib2.0-0 \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # Bun runtime binary
 COPY --from=oven/bun:1.3.9 /usr/local/bin/bun /usr/local/bin/bun
