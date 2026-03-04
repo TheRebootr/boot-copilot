@@ -5,9 +5,11 @@
  */
 
 import type { Context } from "grammy";
+import { InlineKeyboard } from "grammy";
 import { session } from "../session";
 import { WORKING_DIR, ALLOWED_USERS, RESTART_FILE } from "../config";
 import { isAuthorized } from "../security";
+import { getPendingJobs, formatJobForDisplay } from "../jobs";
 
 /**
  * /start - Show welcome message and status.
@@ -34,6 +36,7 @@ export async function handleStart(ctx: Context): Promise<void> {
       `/status - Show detailed status\n` +
       `/resume - Resume last session\n` +
       `/retry - Retry last message\n` +
+      `/jobs - Manage scheduled jobs\n` +
       `/restart - Restart the bot\n\n` +
       `<b>Tips:</b>\n` +
       `• Prefix with <code>!</code> to interrupt current query\n` +
@@ -152,7 +155,7 @@ export async function handleStatus(ctx: Context): Promise<void> {
   }
 
   // Context window
-  const MODEL_CONTEXT_WINDOW = 200_000; // claude-sonnet-4-5
+  const MODEL_CONTEXT_WINDOW = 200_000;
   if (session.lastUsage) {
     const u = session.lastUsage;
     const used = u.input_tokens
@@ -238,6 +241,51 @@ export async function handleResume(ctx: Context): Promise<void> {
     reply_markup: {
       inline_keyboard: buttons,
     },
+  });
+}
+
+/**
+ * /jobs - List pending cron jobs with cancel buttons.
+ */
+export async function handleJobs(ctx: Context): Promise<void> {
+  const userId = ctx.from?.id;
+
+  if (!isAuthorized(userId, ALLOWED_USERS)) {
+    await ctx.reply("Unauthorized.");
+    return;
+  }
+
+  const jobs = getPendingJobs();
+
+  if (jobs.length === 0) {
+    await ctx.reply("No pending jobs.");
+    return;
+  }
+
+  const lines: string[] = [`\u{1F4CB} <b>Pending Jobs</b> (${jobs.length})\n`];
+
+  const keyboard = new InlineKeyboard();
+
+  for (const job of jobs) {
+    lines.push(formatJobForDisplay(job));
+    lines.push(""); // blank line between jobs
+
+    // Add cancel button for each job
+    const label =
+      job.payload.length > 20
+        ? job.payload.slice(0, 17) + "..."
+        : job.payload;
+    keyboard
+      .text(`\u{274C} Cancel: ${label}`, `jobs:cancel:${job.id}`)
+      .row();
+  }
+
+  // Dismiss button at the bottom to close the list
+  keyboard.text("\u{2716} Dismiss", "jobs:dismiss").row();
+
+  await ctx.reply(lines.join("\n"), {
+    parse_mode: "HTML",
+    reply_markup: keyboard,
   });
 }
 

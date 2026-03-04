@@ -26,7 +26,10 @@ import {
   WORKING_DIR,
 } from "./config";
 import { formatToolStatus } from "./formatting";
-import { checkPendingAskUserRequests } from "./handlers/streaming";
+import {
+  checkPendingAskUserRequests,
+  checkPendingCronConfirmRequests,
+} from "./handlers/streaming";
 import { checkCommandSafety, isPathAllowed } from "./security";
 import type {
   SavedSession,
@@ -361,8 +364,11 @@ class ClaudeSession {
               this.lastTool = toolDisplay;
               console.log(`Tool: ${toolDisplay}`);
 
-              // Don't show tool status for ask_user - the buttons are self-explanatory
-              if (!toolName.startsWith("mcp__ask-user")) {
+              // Don't show tool status for ask_user or cron-jobs - the buttons are self-explanatory
+              if (
+                !toolName.startsWith("mcp__ask-user") &&
+                !toolName.startsWith("mcp__cron-jobs")
+              ) {
                 await statusCallback("tool", toolDisplay);
               }
 
@@ -374,6 +380,25 @@ class ClaudeSession {
                 // Retry a few times in case of timing issues
                 for (let attempt = 0; attempt < 3; attempt++) {
                   const buttonsSent = await checkPendingAskUserRequests(
+                    ctx,
+                    chatId,
+                  );
+                  if (buttonsSent) {
+                    askUserTriggered = true;
+                    break;
+                  }
+                  if (attempt < 2) {
+                    await new Promise((resolve) => setTimeout(resolve, 100));
+                  }
+                }
+              }
+
+              // Check for pending cron job confirmation requests
+              if (toolName.startsWith("mcp__cron-jobs") && ctx && chatId) {
+                await new Promise((resolve) => setTimeout(resolve, 200));
+
+                for (let attempt = 0; attempt < 3; attempt++) {
+                  const buttonsSent = await checkPendingCronConfirmRequests(
                     ctx,
                     chatId,
                   );

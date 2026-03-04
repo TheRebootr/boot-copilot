@@ -11,6 +11,7 @@ import { ALLOWED_USERS } from "../config";
 import { isAuthorized } from "../security";
 import { auditLog, startTypingIndicator } from "../utils";
 import { StreamingState, createStatusCallback } from "./streaming";
+import { cancelJob, addJob, type Job } from "../jobs";
 
 /**
  * Handle callback queries from inline keyboards.
@@ -38,7 +39,13 @@ export async function handleCallback(ctx: Context): Promise<void> {
     return;
   }
 
-  // 3. Parse callback data: askuser:{request_id}:{option_index}
+  // 3. Handle job callbacks: jobs:cancel|confirm|reject:{id}
+  if (callbackData.startsWith("jobs:")) {
+    await handleJobCallback(ctx, callbackData);
+    return;
+  }
+
+  // 4. Parse callback data: askuser:{request_id}:{option_index}
   if (!callbackData.startsWith("askuser:")) {
     await ctx.answerCallbackQuery();
     return;
@@ -214,4 +221,140 @@ async function handleResumeCallback(
   } finally {
     typing.stop();
   }
+}
+
+/**
+ * Handle job-related callbacks: cancel, confirm, reject.
+ */
+async function handleJobCallback(
+  ctx: Context,
+  callbackData: string
+): Promise<void> {
+  const parts = callbackData.split(":");
+  if (parts.length < 2) {
+    await ctx.answerCallbackQuery({ text: "Invalid callback data" });
+    return;
+  }
+
+  const action = parts[1]!;
+
+  if (action === "dismiss") {
+    // Dismiss the job list message
+    try {
+      await ctx.deleteMessage();
+    } catch (error) {
+      console.debug("Failed to delete job list message:", error);
+    }
+    await ctx.answerCallbackQuery();
+    return;
+  }
+
+  const id = parts[2];
+  if (!id) {
+    await ctx.answerCallbackQuery({ text: "Invalid callback data" });
+    return;
+  }
+
+  if (action === "cancel") {
+    // Cancel an existing job from /jobs list
+    const success = cancelJob(id);
+    if (success) {
+      try {
+        await ctx.editMessageText(`\u{2705} Job ${id} cancelled.`);
+      } catch (error) {
+        console.debug("Failed to edit cancel message:", error);
+      }
+      await ctx.answerCallbackQuery({ text: "Job cancelled" });
+    } else {
+      await ctx.answerCallbackQuery({
+        text: "Job not found or already completed",
+        show_alert: true,
+      });
+    }
+    return;
+  }
+
+  if (action === "confirm") {
+    // Confirm a pending cron job registration
+    const requestFile = `/tmp/cron-confirm-${id}.json`;
+    let requestData: {
+      type: "reminder" | "claude";
+      due_at: string;
+      payload: string;
+      repeat: string | null;
+    };
+
+    try {
+      const file = Bun.file(requestFile);
+      const text = await file.text();
+      requestData = JSON.parse(text);
+    } catch (error) {
+      console.error(`Failed to load cron-confirm request ${id}:`, error);
+      await ctx.answerCallbackQuery({
+        text: "Request expired or invalid",
+        show_alert: true,
+      });
+      return;
+    }
+
+    try {
+      const jobId = addJob({
+        type: requestData.type,
+        due_at: requestData.due_at,
+        payload: requestData.payload,
+        repeat: (requestData.repeat ?? null) as Job["repeat"],
+      });
+
+      try {
+        await ctx.editMessageText(
+          `\u{2705} Job registered (ID: <code>${jobId}</code>)`,
+          { parse_mode: "HTML" }
+        );
+      } catch (error) {
+        console.debug("Failed to edit confirm message:", error);
+      }
+      await ctx.answerCallbackQuery({ text: "Job registered" });
+    } catch (error) {
+      await ctx.answerCallbackQuery({
+        text: `Failed: ${String(error).slice(0, 100)}`,
+        show_alert: true,
+      });
+      return;
+    }
+
+    // Clean up request file
+    try {
+      unlinkSync(requestFile);
+    } catch (error) {
+      console.debug("Failed to delete cron-confirm file:", error);
+    }
+
+    // Resume Claude's event loop with confirmation
+    if (session.isRunning) {
+      // Session is paused waiting for user response - no need to send a new message
+      // The confirm result will be picked up on the next query
+    }
+    return;
+  }
+
+  if (action === "reject") {
+    // Reject a pending cron job registration
+    try {
+      await ctx.editMessageText("\u{274C} Job rejected.");
+    } catch (error) {
+      console.debug("Failed to edit reject message:", error);
+    }
+    await ctx.answerCallbackQuery({ text: "Job rejected" });
+
+    // Clean up request file
+    const requestFile = `/tmp/cron-confirm-${id}.json`;
+    try {
+      unlinkSync(requestFile);
+    } catch (error) {
+      console.debug("Failed to delete cron-confirm file:", error);
+    }
+    return;
+  }
+
+  await ctx.answerCallbackQuery({ text: "Unknown action" });
 }

@@ -80,6 +80,76 @@ export async function checkPendingAskUserRequests(
 }
 
 /**
+ * Check for pending cron job confirmation requests and send inline keyboards.
+ */
+export async function checkPendingCronConfirmRequests(
+  ctx: Context,
+  chatId: number
+): Promise<boolean> {
+  const glob = new Bun.Glob("cron-confirm-*.json");
+  let buttonsSent = false;
+
+  for await (const filename of glob.scan({ cwd: "/tmp", absolute: false })) {
+    const filepath = `/tmp/${filename}`;
+    try {
+      const file = Bun.file(filepath);
+      const text = await file.text();
+      const data = JSON.parse(text);
+
+      // Only process pending requests for this chat
+      if (data.status !== "pending") continue;
+      if (String(data.chat_id) !== String(chatId)) continue;
+
+      const requestId = data.request_id || "";
+      if (!requestId) continue;
+
+      // Build summary message
+      const typeEmoji = data.type === "reminder" ? "\u{1F514}" : "\u{1F916}";
+      const repeatLabel = data.repeat ? ` (${data.repeat})` : " (once)";
+
+      const due = new Date(data.due_at);
+      const dateStr = due.toLocaleString("en-SG", {
+        timeZone: "Asia/Singapore",
+        weekday: "short",
+        day: "2-digit",
+        month: "short",
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false,
+      });
+
+      const preview =
+        data.payload.length > 120
+          ? data.payload.slice(0, 117) + "..."
+          : data.payload;
+
+      const summary =
+        `${typeEmoji} <b>New ${data.type} job</b>${repeatLabel}\n` +
+        `\u{1F4C5} ${dateStr}\n` +
+        `\u{1F4DD} <i>${escapeHtml(preview)}</i>`;
+
+      const keyboard = new InlineKeyboard()
+        .text("\u{2705} Confirm", `jobs:confirm:${requestId}`)
+        .text("\u{274C} Reject", `jobs:reject:${requestId}`);
+
+      await ctx.reply(summary, {
+        parse_mode: "HTML",
+        reply_markup: keyboard,
+      });
+      buttonsSent = true;
+
+      // Mark as sent
+      data.status = "sent";
+      await Bun.write(filepath, JSON.stringify(data));
+    } catch (error) {
+      console.warn(`Failed to process cron-confirm file ${filepath}:`, error);
+    }
+  }
+
+  return buttonsSent;
+}
+
+/**
  * Tracks state for streaming message updates.
  */
 export class StreamingState {

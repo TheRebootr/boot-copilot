@@ -16,6 +16,7 @@ import {
   handleResume,
   handleRestart,
   handleRetry,
+  handleJobs,
   handleText,
   handleVoice,
   handlePhoto,
@@ -58,6 +59,7 @@ bot.command("status", handleStatus);
 bot.command("resume", handleResume);
 bot.command("restart", handleRestart);
 bot.command("retry", handleRetry);
+bot.command("jobs", handleJobs);
 
 // ============== Message Handlers ==============
 
@@ -102,6 +104,16 @@ console.log("Starting bot...");
 // Get bot info first
 const botInfo = await bot.api.getMe();
 console.log(`Bot started: @${botInfo.username}`);
+
+// Clean up stale MCP request files from previous runs
+for (const pattern of ["ask-user-*.json", "cron-confirm-*.json"]) {
+  const glob = new Bun.Glob(pattern);
+  for (const file of glob.scanSync({ cwd: "/tmp", absolute: false })) {
+    try {
+      unlinkSync(`/tmp/${file}`);
+    } catch {}
+  }
+}
 
 // Check for pending restart message to update
 if (existsSync(RESTART_FILE)) {

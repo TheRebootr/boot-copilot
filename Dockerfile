@@ -60,6 +60,7 @@ COPY --from=builder --chown=node:node /build/node_modules /app/node_modules
 # To update: edit on host → docker compose build → docker compose up -d
 COPY --chown=node:node src/ /app/src/
 COPY --chown=node:node ask_user_mcp/ /app/ask_user_mcp/
+COPY --chown=node:node cron_mcp/ /app/cron_mcp/
 COPY --chown=node:node package.json tsconfig.json mcp-config.ts /app/
 
 USER node
