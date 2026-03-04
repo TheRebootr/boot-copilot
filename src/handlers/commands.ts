@@ -10,6 +10,7 @@ import { session } from "../session";
 import { WORKING_DIR, ALLOWED_USERS, RESTART_FILE } from "../config";
 import { isAuthorized } from "../security";
 import { getPendingJobs, formatJobForDisplay } from "../jobs";
+import { buildSessionPage } from "../session-ui";
 
 /**
  * /start - Show welcome message and status.
@@ -27,21 +28,21 @@ export async function handleStart(ctx: Context): Promise<void> {
   const workDir = WORKING_DIR;
 
   await ctx.reply(
-    `🤖 <b>Claude Telegram Bot</b>\n\n` +
-      `Status: ${status}\n` +
-      `Working directory: <code>${workDir}</code>\n\n` +
-      `<b>Commands:</b>\n` +
+    `<b>Boot</b> — ${status}\n\n` +
+      `<b>Sessions</b>\n` +
       `/new - Start fresh session\n` +
+      `/resume - Resume a saved session\n` +
+      `/rename - Rename current session\n` +
       `/stop - Stop current query\n` +
-      `/status - Show detailed status\n` +
-      `/resume - Resume last session\n` +
-      `/retry - Retry last message\n` +
-      `/jobs - Manage scheduled jobs\n` +
-      `/restart - Restart the bot\n\n` +
-      `<b>Tips:</b>\n` +
-      `• Prefix with <code>!</code> to interrupt current query\n` +
-      `• Use "think" keyword for extended reasoning\n` +
-      `• Send photos, voice, or documents`,
+      `/retry - Retry last message\n\n` +
+      `<b>System</b>\n` +
+      `/status - Detailed status\n` +
+      `/jobs - Scheduled jobs\n` +
+      `/restart - Restart bot\n\n` +
+      `<b>Tips</b>\n` +
+      `• <code>!</code> prefix to interrupt and send\n` +
+      `• "think" for extended reasoning\n` +
+      `• Photos, voice, video, docs all supported`,
     { parse_mode: "HTML" }
   );
 }
@@ -106,85 +107,65 @@ export async function handleStatus(ctx: Context): Promise<void> {
     return;
   }
 
-  const lines: string[] = ["📊 <b>Bot Status</b>\n"];
+  const lines: string[] = [];
 
-  // Session status
+  // Session line — title + state in one line
   if (session.isActive) {
-    lines.push(`✅ Session: Active (${session.sessionId?.slice(0, 8)}...)`);
+    const title = session.conversationTitle || session.sessionId?.slice(0, 8);
+    const state = session.isRunning ? "running" : "idle";
+    lines.push(`<b>${title}</b> · ${state}`);
   } else {
-    lines.push("⚪ Session: None");
+    lines.push(`No active session`);
   }
 
-  // Query status
+  // Running query detail
   if (session.isRunning) {
     const elapsed = session.queryStarted
       ? Math.floor((Date.now() - session.queryStarted.getTime()) / 1000)
       : 0;
-    lines.push(`🔄 Query: Running (${elapsed}s)`);
-    if (session.currentTool) {
-      lines.push(`   └─ ${session.currentTool}`);
-    }
-  } else {
-    lines.push("⚪ Query: Idle");
-    if (session.lastTool) {
-      lines.push(`   └─ Last: ${session.lastTool}`);
-    }
+    const tool = session.currentTool || session.lastTool;
+    lines.push(tool ? `└ ${tool} (${elapsed}s)` : `└ ${elapsed}s`);
   }
 
-  // Last activity
-  if (session.lastActivity) {
-    const ago = Math.floor(
-      (Date.now() - session.lastActivity.getTime()) / 1000
-    );
-    lines.push(`\n⏱️ Last activity: ${ago}s ago`);
-  }
-
-  // Usage stats
-  if (session.lastUsage) {
-    const usage = session.lastUsage;
-    lines.push(
-      `\n📈 Last query usage:`,
-      `   Input: ${usage.input_tokens?.toLocaleString() || "?"} tokens`,
-      `   Output: ${usage.output_tokens?.toLocaleString() || "?"} tokens`
-    );
-    if (usage.cache_read_input_tokens) {
-      lines.push(
-        `   Cache read: ${usage.cache_read_input_tokens.toLocaleString()}`
-      );
-    }
-  }
-
-  // Context window
+  // Context window — the key info
   const MODEL_CONTEXT_WINDOW = 200_000;
   if (session.lastUsage) {
     const u = session.lastUsage;
     const used = u.input_tokens
       + (u.cache_read_input_tokens || 0)
       + (u.cache_creation_input_tokens || 0);
-    const pct  = (used / MODEL_CONTEXT_WINDOW) * 100;
-    const BAR  = 16;
+    const pct = (used / MODEL_CONTEXT_WINDOW) * 100;
+    const BAR = 16;
     const fill = Math.round((pct / 100) * BAR);
-    const bar  = "█".repeat(fill) + "░".repeat(BAR - fill);
-    const remaining = (MODEL_CONTEXT_WINDOW - used).toLocaleString();
+    const bar = "█".repeat(fill) + "░".repeat(BAR - fill);
     lines.push(
-      `\n🪟 Context window:`,
-      `   ${bar}  ${pct.toFixed(1)}% used`,
-      `   ${used.toLocaleString()} / ${MODEL_CONTEXT_WINDOW.toLocaleString()} tokens (~${remaining} remaining)`
+      `\n${bar} ${pct.toFixed(0)}%`,
+      `${used.toLocaleString()} / ${MODEL_CONTEXT_WINDOW.toLocaleString()} tokens`,
     );
+
+    // Cache hit ratio — useful to know
+    const cached = u.cache_read_input_tokens || 0;
+    if (cached > 0) {
+      const cacheRatio = ((cached / used) * 100).toFixed(0);
+      lines.push(`Cache: ${cacheRatio}% hit`);
+    }
   }
 
-  // Error status
+  // Error — only if recent
   if (session.lastError) {
     const ago = session.lastErrorTime
       ? Math.floor((Date.now() - session.lastErrorTime.getTime()) / 1000)
-      : "?";
-    lines.push(`\n⚠️ Last error (${ago}s ago):`, `   ${session.lastError}`);
+      : null;
+    const ageStr = ago !== null ? ` (${ago}s ago)` : "";
+    lines.push(`\n⚠️ ${session.lastError}${ageStr}`);
   }
 
-  // Working directory
-  lines.push(`\n📁 Working dir: <code>${WORKING_DIR}</code>`);
+  const keyboard = new InlineKeyboard().text("✕ Dismiss", "status:dismiss");
 
-  await ctx.reply(lines.join("\n"), { parse_mode: "HTML" });
+  await ctx.reply(lines.join("\n"), {
+    parse_mode: "HTML",
+    reply_markup: keyboard,
+  });
 }
 
 /**
@@ -199,7 +180,7 @@ export async function handleResume(ctx: Context): Promise<void> {
   }
 
   if (session.isActive) {
-    await ctx.reply("Sessione già attiva. Usa /new per iniziare da capo.");
+    await ctx.reply("Session already active. Use /new to start fresh.");
     return;
   }
 
@@ -207,36 +188,13 @@ export async function handleResume(ctx: Context): Promise<void> {
   const sessions = session.getSessionList();
 
   if (sessions.length === 0) {
-    await ctx.reply("❌ Nessuna sessione salvata.");
+    await ctx.reply("No saved sessions.");
     return;
   }
 
-  // Build inline keyboard with session list
-  const buttons = sessions.map((s) => {
-    // Format date: "18/01 10:30"
-    const date = new Date(s.saved_at);
-    const dateStr = date.toLocaleDateString("it-IT", {
-      day: "2-digit",
-      month: "2-digit",
-    });
-    const timeStr = date.toLocaleTimeString("it-IT", {
-      hour: "2-digit",
-      minute: "2-digit",
-    });
+  const { buttons, header } = buildSessionPage(sessions, 0);
 
-    // Truncate title for button (max ~40 chars to fit)
-    const titlePreview =
-      s.title.length > 35 ? s.title.slice(0, 32) + "..." : s.title;
-
-    return [
-      {
-        text: `📅 ${dateStr} ${timeStr} - "${titlePreview}"`,
-        callback_data: `resume:${s.session_id}`,
-      },
-    ];
-  });
-
-  await ctx.reply("📋 <b>Sessioni salvate</b>\n\nSeleziona una sessione da riprendere:", {
+  await ctx.reply(`<b>${header}</b>`, {
     parse_mode: "HTML",
     reply_markup: {
       inline_keyboard: buttons,
@@ -324,6 +282,35 @@ export async function handleRestart(ctx: Context): Promise<void> {
 
   // Exit - launchd will restart us
   process.exit(0);
+}
+
+/**
+ * /rename - Rename the current session.
+ */
+export async function handleRename(ctx: Context): Promise<void> {
+  const userId = ctx.from?.id;
+
+  if (!isAuthorized(userId, ALLOWED_USERS)) {
+    await ctx.reply("Unauthorized.");
+    return;
+  }
+
+  if (!session.isActive) {
+    await ctx.reply("No active session to rename.");
+    return;
+  }
+
+  // Extract title from command text: /rename My New Title
+  const text = ctx.message?.text || "";
+  const title = text.replace(/^\/rename\s*/i, "").trim();
+
+  if (!title) {
+    await ctx.reply("Usage: /rename <new title>");
+    return;
+  }
+
+  session.updateTitle(title);
+  await ctx.reply(`Session renamed: "${title}"`);
 }
 
 /**

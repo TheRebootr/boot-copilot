@@ -23,7 +23,9 @@ export interface SavedSession {
   session_id: string;
   saved_at: string;
   working_dir: string;
-  title: string; // First message truncated (max ~50 chars)
+  title: string; // First message truncated, or Haiku-inferred
+  last_activity?: string; // ISO string, falls back to saved_at
+  title_inferred?: boolean; // true if title was set by Haiku inference
 }
 
 export interface SessionHistory {

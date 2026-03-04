@@ -135,6 +135,8 @@ export async function handleVideo(ctx: Context): Promise<void> {
       ctx
     );
 
+    session.scheduleTitle(caption || "[Video]", response);
+
     await auditLog(userId, username, "VIDEO", caption || "[video]", response);
 
     // Delete status message

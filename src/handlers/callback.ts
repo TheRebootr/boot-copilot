@@ -12,6 +12,7 @@ import { isAuthorized } from "../security";
 import { auditLog, startTypingIndicator } from "../utils";
 import { StreamingState, createStatusCallback } from "./streaming";
 import { cancelJob, addJob, type Job } from "../jobs";
+import { buildSessionPage } from "../session-ui";
 
 /**
  * Handle callback queries from inline keyboards.
@@ -34,8 +35,25 @@ export async function handleCallback(ctx: Context): Promise<void> {
   }
 
   // 2. Handle resume callbacks: resume:{session_id}
-  if (callbackData.startsWith("resume:")) {
+  if (callbackData.startsWith("resume:") && !callbackData.startsWith("resume_page:")) {
     await handleResumeCallback(ctx, callbackData);
+    return;
+  }
+
+  // 2b. Handle resume pagination: resume_page:{page}
+  if (callbackData.startsWith("resume_page:")) {
+    await handleResumePageCallback(ctx, callbackData);
+    return;
+  }
+
+  // 2c. Handle status dismiss
+  if (callbackData === "status:dismiss") {
+    try {
+      await ctx.deleteMessage();
+    } catch (error) {
+      console.debug("Failed to delete status message:", error);
+    }
+    await ctx.answerCallbackQuery();
     return;
   }
 
@@ -172,13 +190,13 @@ async function handleResumeCallback(
   const sessionId = callbackData.replace("resume:", "");
 
   if (!sessionId || !userId || !chatId) {
-    await ctx.answerCallbackQuery({ text: "ID sessione non valido" });
+    await ctx.answerCallbackQuery({ text: "Invalid session ID" });
     return;
   }
 
   // Check if session is already active
   if (session.isActive) {
-    await ctx.answerCallbackQuery({ text: "Sessione già attiva" });
+    await ctx.answerCallbackQuery({ text: "Session already active" });
     return;
   }
 
@@ -196,7 +214,7 @@ async function handleResumeCallback(
   } catch (error) {
     console.debug("Failed to edit resume message:", error);
   }
-  await ctx.answerCallbackQuery({ text: "Sessione ripresa!" });
+  await ctx.answerCallbackQuery({ text: "Session resumed" });
 
   // Send a hidden recap prompt to Claude
   const recapPrompt =
@@ -221,6 +239,38 @@ async function handleResumeCallback(
   } finally {
     typing.stop();
   }
+}
+
+/**
+ * Handle resume pagination callback (resume_page:{page}).
+ */
+async function handleResumePageCallback(
+  ctx: Context,
+  callbackData: string,
+): Promise<void> {
+  const pageStr = callbackData.replace("resume_page:", "");
+  const page = parseInt(pageStr, 10);
+
+  if (isNaN(page)) {
+    await ctx.answerCallbackQuery({ text: "Invalid page" });
+    return;
+  }
+
+  const sessions = session.getSessionList();
+  const { buttons, header } = buildSessionPage(sessions, page);
+
+  try {
+    await ctx.editMessageText(`<b>${header}</b>`, {
+      parse_mode: "HTML",
+      reply_markup: {
+        inline_keyboard: buttons,
+      },
+    });
+  } catch (error) {
+    console.debug("Failed to edit resume page:", error);
+  }
+
+  await ctx.answerCallbackQuery();
 }
 
 /**

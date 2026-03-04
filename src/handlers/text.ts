@@ -84,6 +84,8 @@ export async function handleText(ctx: Context): Promise<void> {
         ctx
       );
 
+      session.scheduleTitle(message, response);
+
       // 10. Audit log
       await auditLog(userId, username, "TEXT", message, response);
       break; // Success - exit retry loop

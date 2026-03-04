@@ -119,6 +119,8 @@ export async function processAudioFile(
       ctx
     );
 
+    session.scheduleTitle(transcript, claudeResponse);
+
     // Audit log
     await auditLog(userId, username, "AUDIO", transcript, claudeResponse);
   } catch (error) {

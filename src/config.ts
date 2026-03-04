@@ -162,6 +162,10 @@ export const TRANSCRIPTION_PROMPT = TRANSCRIPTION_CONTEXT
 
 export const TRANSCRIPTION_AVAILABLE = !!OPENAI_API_KEY;
 
+// ============== Session Management ==============
+
+export const MAX_SESSIONS = 25;
+
 // ============== Thinking Keywords ==============
 
 const thinkingKeywordsStr =

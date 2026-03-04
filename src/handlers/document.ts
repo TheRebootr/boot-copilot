@@ -253,7 +253,7 @@ async function processArchive(
 
     // Set conversation title (if new session)
     if (!session.isActive) {
-      const rawTitle = caption || `[Archivio: ${fileName}]`;
+      const rawTitle = caption || `[Archive: ${fileName}]`;
       const title =
         rawTitle.length > 50 ? rawTitle.slice(0, 47) + "..." : rawTitle;
       session.conversationTitle = title;
@@ -271,6 +271,8 @@ async function processArchive(
       chatId,
       ctx
     );
+
+    session.scheduleTitle(caption || `[Archive: ${fileName}]`, response);
 
     await auditLog(
       userId,
@@ -338,8 +340,8 @@ async function processDocuments(
 
   // Set conversation title (if new session)
   if (!session.isActive) {
-    const docName = documents[0]?.name || "[Documento]";
-    const rawTitle = caption || `[Documento: ${docName}]`;
+    const docName = documents[0]?.name || "document";
+    const rawTitle = caption || `[Document: ${docName}]`;
     const title =
       rawTitle.length > 50 ? rawTitle.slice(0, 47) + "..." : rawTitle;
     session.conversationTitle = title;
@@ -361,6 +363,9 @@ async function processDocuments(
       chatId,
       ctx
     );
+
+    const docName = documents[0]?.name || "document";
+    session.scheduleTitle(caption || `[Document: ${docName}]`, response);
 
     await auditLog(
       userId,

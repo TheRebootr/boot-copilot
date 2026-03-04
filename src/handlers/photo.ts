@@ -74,7 +74,7 @@ async function processPhotos(
 
   // Set conversation title (if new session)
   if (!session.isActive) {
-    const rawTitle = caption || "[Foto]";
+    const rawTitle = caption || "[Photo]";
     const title =
       rawTitle.length > 50 ? rawTitle.slice(0, 47) + "..." : rawTitle;
     session.conversationTitle = title;
@@ -96,6 +96,8 @@ async function processPhotos(
       chatId,
       ctx
     );
+
+    session.scheduleTitle(caption || "[Photo]", response);
 
     await auditLog(userId, username, "PHOTO", prompt, response);
   } catch (error) {

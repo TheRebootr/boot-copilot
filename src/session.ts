@@ -16,6 +16,7 @@ import type { Context } from "grammy";
 import {
   ALLOWED_PATHS,
   CLAUDE_MODEL,
+  MAX_SESSIONS,
   MCP_SERVERS,
   SAFETY_PROMPT,
   SESSION_FILE,
@@ -25,6 +26,7 @@ import {
   THINKING_KEYWORDS,
   WORKING_DIR,
 } from "./config";
+import { inferSessionTitle } from "./title-inference";
 import { formatToolStatus } from "./formatting";
 import {
   checkPendingAskUserRequests,
@@ -76,9 +78,6 @@ function getTextFromMessage(msg: SDKMessage): string | null {
 /**
  * Manages Claude Code sessions using the Agent SDK V1.
  */
-// Maximum number of sessions to keep in history
-const MAX_SESSIONS = 5;
-
 class ClaudeSession {
   sessionId: string | null = null;
   lastActivity: Date | null = null;
@@ -485,6 +484,7 @@ class ClaudeSession {
     this.lastActivity = new Date();
     this.lastError = null;
     this.lastErrorTime = null;
+    this.updateActivity();
 
     // If ask_user was triggered, return early - user will respond via button
     if (askUserTriggered) {
@@ -522,23 +522,26 @@ class ClaudeSession {
     try {
       // Load existing session history
       const history = this.loadSessionHistory();
+      const now = new Date().toISOString();
 
-      // Create new session entry
-      const newSession: SavedSession = {
-        session_id: this.sessionId,
-        saved_at: new Date().toISOString(),
-        working_dir: WORKING_DIR,
-        title: this.conversationTitle || "Sessione senza titolo",
-      };
-
-      // Remove any existing entry with same session_id (update in place)
+      // Check if this session already exists
       const existingIndex = history.sessions.findIndex(
         (s) => s.session_id === this.sessionId,
       );
+
       if (existingIndex !== -1) {
-        history.sessions[existingIndex] = newSession;
+        // Update existing: preserve title_inferred, update activity
+        history.sessions[existingIndex]!.last_activity = now;
       } else {
-        // Add new session at the beginning
+        // Create new session entry
+        const newSession: SavedSession = {
+          session_id: this.sessionId,
+          saved_at: now,
+          working_dir: WORKING_DIR,
+          title: this.conversationTitle || "Untitled session",
+          last_activity: now,
+          title_inferred: false,
+        };
         history.sessions.unshift(newSession);
       }
 
@@ -551,6 +554,74 @@ class ClaudeSession {
     } catch (error) {
       console.warn(`Failed to save session: ${error}`);
     }
+  }
+
+  /**
+   * Update last_activity timestamp for the current session.
+   */
+  updateActivity(): void {
+    if (!this.sessionId) return;
+
+    try {
+      const history = this.loadSessionHistory();
+      const entry = history.sessions.find(
+        (s) => s.session_id === this.sessionId,
+      );
+      if (entry) {
+        entry.last_activity = new Date().toISOString();
+        Bun.write(SESSION_FILE, JSON.stringify(history, null, 2));
+      }
+    } catch (error) {
+      console.warn(`Failed to update activity: ${error}`);
+    }
+  }
+
+  /**
+   * Update the session title and mark as inferred.
+   */
+  updateTitle(title: string): void {
+    if (!this.sessionId) return;
+
+    try {
+      const history = this.loadSessionHistory();
+      const entry = history.sessions.find(
+        (s) => s.session_id === this.sessionId,
+      );
+      if (entry) {
+        entry.title = title;
+        entry.title_inferred = true;
+        Bun.write(SESSION_FILE, JSON.stringify(history, null, 2));
+        this.conversationTitle = title;
+        console.log(`Session title updated: "${title}"`);
+      }
+    } catch (error) {
+      console.warn(`Failed to update title: ${error}`);
+    }
+  }
+
+  /**
+   * Fire-and-forget title inference. No-op if already inferred.
+   */
+  scheduleTitle(userMessage: string, claudeReply: string): void {
+    if (!this.sessionId) return;
+
+    // Check if already inferred
+    try {
+      const history = this.loadSessionHistory();
+      const entry = history.sessions.find(
+        (s) => s.session_id === this.sessionId,
+      );
+      if (entry?.title_inferred) return;
+    } catch {
+      return;
+    }
+
+    // Fire and forget
+    inferSessionTitle(userMessage, claudeReply).then((title) => {
+      if (title) this.updateTitle(title);
+    }).catch(() => {
+      // Silently ignore — title stays as truncated first message
+    });
   }
 
   /**
@@ -575,10 +646,14 @@ class ClaudeSession {
    */
   getSessionList(): SavedSession[] {
     const history = this.loadSessionHistory();
-    // Filter to only sessions for current working directory
-    return history.sessions.filter(
-      (s) => !s.working_dir || s.working_dir === WORKING_DIR,
-    );
+    // Filter to only sessions for current working directory, sort by last activity
+    return history.sessions
+      .filter((s) => !s.working_dir || s.working_dir === WORKING_DIR)
+      .sort((a, b) => {
+        const aTime = new Date(a.last_activity || a.saved_at).getTime();
+        const bTime = new Date(b.last_activity || b.saved_at).getTime();
+        return bTime - aTime;
+      });
   }
 
   /**
@@ -591,13 +666,13 @@ class ClaudeSession {
     );
 
     if (!sessionData) {
-      return [false, "Sessione non trovata"];
+      return [false, "Session not found"];
     }
 
     if (sessionData.working_dir && sessionData.working_dir !== WORKING_DIR) {
       return [
         false,
-        `Sessione per directory diversa: ${sessionData.working_dir}`,
+        `Session for different directory: ${sessionData.working_dir}`,
       ];
     }
 
@@ -609,7 +684,7 @@ class ClaudeSession {
       `Resumed session ${sessionData.session_id.slice(0, 8)}... - "${sessionData.title}"`,
     );
 
-    return [true, `Ripresa sessione: "${sessionData.title}"`];
+    return [true, `Resumed: "${sessionData.title}"`];
   }
 
   /**
@@ -618,7 +693,7 @@ class ClaudeSession {
   resumeLast(): [success: boolean, message: string] {
     const sessions = this.getSessionList();
     if (sessions.length === 0) {
-      return [false, "Nessuna sessione salvata"];
+      return [false, "No saved sessions"];
     }
 
     return this.resumeSession(sessions[0]!.session_id);

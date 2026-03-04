@@ -120,6 +120,8 @@ export async function handleVoice(ctx: Context): Promise<void> {
       ctx
     );
 
+    session.scheduleTitle(transcript, claudeResponse);
+
     // 12. Audit log
     await auditLog(userId, username, "VOICE", transcript, claudeResponse);
   } catch (error) {
