@@ -44,7 +44,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY --from=oven/bun:1.3.9 /usr/local/bin/bun /usr/local/bin/bun
 
 # Claude Code CLI via npm (native installer has segfault/OOM on AMD64 Bookworm in Docker)
-RUN npm install -g @anthropic-ai/claude-code@2.1.34
+RUN npm install -g @anthropic-ai/claude-code@2.1.69
 
 # Non-root user: node user already exists in node: images at UID 1000
 # Verify UID matches host user

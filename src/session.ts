@@ -1,8 +1,8 @@
 /**
  * Session management for Claude Telegram Bot.
  *
- * ClaudeSession class manages Claude Code sessions using the Agent SDK V1.
- * V1 supports full options (cwd, mcpServers, settingSources, etc.)
+ * ClaudeSession class manages Claude Code sessions using the Agent SDK V2.
+ * Uses adaptive thinking + effort levels (medium/high/max).
  */
 
 import {
@@ -41,23 +41,25 @@ import type {
 } from "./types";
 
 /**
- * Determine thinking token budget based on message keywords.
+ * Determine effort level based on message keywords.
+ * Default is "medium" (matches Anthropic's Opus 4.6 default).
+ * Users can escalate with thinking keywords.
  */
-function getThinkingLevel(message: string): number {
+function getEffortLevel(message: string): "medium" | "high" | "max" {
   const msgLower = message.toLowerCase();
 
   // Check deep thinking triggers first (more specific)
   if (THINKING_DEEP_KEYWORDS.some((k) => msgLower.includes(k))) {
-    return 50000;
+    return "max";
   }
 
   // Check normal thinking triggers
   if (THINKING_KEYWORDS.some((k) => msgLower.includes(k))) {
-    return 10000;
+    return "high";
   }
 
-  // Default: no thinking
-  return 0;
+  // Default: medium effort
+  return "medium";
 }
 
 /**
@@ -76,7 +78,7 @@ function getTextFromMessage(msg: SDKMessage): string | null {
 }
 
 /**
- * Manages Claude Code sessions using the Agent SDK V1.
+ * Manages Claude Code sessions using the Agent SDK V2.
  */
 class ClaudeSession {
   sessionId: string | null = null;
@@ -185,10 +187,7 @@ class ClaudeSession {
     }
 
     const isNewSession = !this.isActive;
-    const thinkingTokens = getThinkingLevel(message);
-    const thinkingLabel =
-      { 0: "off", 10000: "normal", 50000: "deep" }[thinkingTokens] ||
-      String(thinkingTokens);
+    const effort = getEffortLevel(message);
 
     // Inject current date/time at session start so Claude doesn't need to call a tool for it
     let messageToSend = message;
@@ -218,7 +217,7 @@ class ClaudeSession {
       ? `${SAFETY_PROMPT}\n\n## Session Memory\n${memoryContent}`
       : SAFETY_PROMPT;
 
-    // Build SDK V1 options - supports all features
+    // Build SDK V2 options
     const options: Options = {
       model: CLAUDE_MODEL,
       cwd: WORKING_DIR,
@@ -227,7 +226,8 @@ class ClaudeSession {
       allowDangerouslySkipPermissions: true,
       systemPrompt: systemPrompt,
       mcpServers: MCP_SERVERS,
-      maxThinkingTokens: thinkingTokens,
+      thinking: { type: "adaptive" },
+      effort: effort,
       additionalDirectories: ALLOWED_PATHS,
       resume: this.sessionId || undefined,
     };
@@ -242,10 +242,10 @@ class ClaudeSession {
         `RESUMING session ${this.sessionId.slice(
           0,
           8,
-        )}... (thinking=${thinkingLabel})`,
+        )}... (effort=${effort})`,
       );
     } else {
-      console.log(`STARTING new Claude session (thinking=${thinkingLabel})`);
+      console.log(`STARTING new Claude session (effort=${effort})`);
       this.sessionId = null;
     }
 
@@ -274,7 +274,7 @@ class ClaudeSession {
     let askUserTriggered = false;
 
     try {
-      // Use V1 query() API - supports all options including cwd, mcpServers, etc.
+      // Stream via SDK query() API
       const queryInstance = query({
         prompt: messageToSend,
         options: {
@@ -457,7 +457,7 @@ class ClaudeSession {
         }
       }
 
-      // V1 query completes automatically when the generator ends
+      // Query completes when the generator ends
     } catch (error) {
       const errorStr = String(error).toLowerCase();
       const isCleanupError =
